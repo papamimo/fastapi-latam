@@ -23,6 +23,7 @@ app = FastAPI()
 # 🔹 CORS (100 % compatible con Render)
 # ===========================
 origins = [
+     "https://latam-from.onrender.com",   
     "https://ltamaeropromoweb-ecuador.netlify.app",  # ✅ dominio de tu frontend
     "http://localhost:4200",                         # para pruebas locales
 ]
