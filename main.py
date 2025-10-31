@@ -19,12 +19,14 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://ltamaeropromoweb-ecuador.netlify.app",  # tu dominio Netlify
+        "http://localhost:4200",  # opcional para desarrollo local
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # ===========================
 # 🔹 MODELOS DE ENTRADA
 # ===========================
