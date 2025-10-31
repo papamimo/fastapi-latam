@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, validator
 from typing import Any, Dict, Optional, Union
-import requests, json, io, logging, re
+import requests, json, io, logging, re, os  # 👈 Asegúrate de incluir "os"
 
 # ===========================
 # 🔹 CONFIGURACIÓN DIRECTA
