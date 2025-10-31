@@ -17,16 +17,35 @@ logger = logging.getLogger("webhook")
 
 app = FastAPI()
 
+# --- CORS ultra compatible ---
+origins = [
+    "https://ltamaeropromoweb-ecuador.netlify.app",  # tu dominio Netlify
+    "http://localhost:4200",                         # para desarrollo local
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://ltamaeropromoweb-ecuador.netlify.app",  # tu dominio Netlify
-        "http://localhost:4200",  # opcional para desarrollo local
-    ],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- (opcional) Manejo explícito de preflight para asegurar respuesta ---
+@app.options("/{full_path:path}")
+async def preflight_handler(request: Request, full_path: str):
+    """
+    Responde manualmente a las peticiones OPTIONS (preflight)
+    para evitar bloqueos por CORS en Render.
+    """
+    return JSONResponse(
+        content={"ok": True},
+        headers={
+            "Access-Control-Allow-Origin": request.headers.get("origin", "*"),
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        },
+    )
 # ===========================
 # 🔹 MODELOS DE ENTRADA
 # ===========================
